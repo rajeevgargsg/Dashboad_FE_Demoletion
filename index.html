@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Demolition CAPEX Dashboard – 32 Quality Road</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- SheetJS for Excel parsing -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+  
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: {
+            primary: { 50: '#fef3c7', 100: '#fde68a', 500: '#f59e0b', 600: '#d97706', 700: '#b45309' },
+            category: {
+              prelim: '#3b82f6',
+              demolition: '#ef4444',
+              survey: '#22c55e',
+              geotech: '#8b5cf6',
+              forward: '#06b6d4',
+              provisional: '#64748b'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+    .card { @apply bg-white rounded-xl shadow-sm border border-gray-100 p-5 transition hover:shadow-md; }
+    
+    /* Category Cards */
+    .category-card { @apply relative overflow-hidden rounded-xl p-4 text-white transition hover:scale-[1.02]; }
+    .category-card::before { content: ''; @apply absolute inset-0 opacity-15; }
+    .category-prelim::before { background: #3b82f6; }
+    .category-demolition::before { background: #ef4444; }
+    .category-survey::before { background: #22c55e; }
+    .category-geotech::before { background: #8b5cf6; }
+    .category-forward::before { background: #06b6d4; }
+    .category-provisional::before { background: #64748b; }
+    
+    /* Badges */
+    .badge { @apply px-2.5 py-0.5 rounded-full text-xs font-medium inline-flex items-center gap-1 border; }
+    .badge-critical { @apply bg-red-50 text-red-700 border-red-200; }
+    .badge-high { @apply bg-orange-50 text-orange-700 border-orange-200; }
+    .badge-medium { @apply bg-yellow-50 text-yellow-700 border-yellow-200; }
+    .badge-low { @apply bg-green-50 text-green-700 border-green-200; }
+    .badge-not-started { @apply bg-gray-50 text-gray-700 border-gray-200; }
+    .badge-in-progress { @apply bg-blue-50 text-blue-700 border-blue-200; }
+    .badge-completed { @apply bg-emerald-50 text-emerald-700 border-emerald-200; }
+    
+    .phase-badge { @apply px-2 py-0.5 rounded text-xs font-medium border inline-flex items-center gap-1; }
+    .phase-0 { @apply bg-amber-50 text-amber-700 border-amber-200; }
+    
+    .currency { @apply font-mono font-semibold tabular-nums; }
+    .table-container { @apply overflow-x-auto rounded-xl border border-gray-200; }
+    table { @apply min-w-full divide-y divide-gray-200; }
+    thead { @apply bg-gray-50 sticky top-0 z-10 shadow-sm; }
+    th { @apply px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:bg-gray-100 transition; }
+    td { @apply px-4 py-3 text-sm text-gray-700 whitespace-nowrap; }
+    tr:hover { @apply bg-gray-50; }
+    
+    .progress-bar { @apply h-2 bg-gray-200 rounded-full overflow-hidden; }
+    .progress-fill { @apply h-full rounded-full transition-all duration-500 bg-white; }
+    
+    .column-toggle { @apply flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer transition; }
+    .column-toggle input { @apply w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-amber-500; }
+    
+    .chart-container { @apply h-56; }
+    .monday-embed { display: none; }
+    .table-wrapper { max-height: 450px; overflow-y: auto; }
+    
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in { animation: fadeIn 0.25s ease-out; }
+    
+    .drop-zone { @apply border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-amber-400 hover:bg-amber-50/30 transition cursor-pointer; }
+    .drop-zone.dragover { @apply border-amber-500 bg-amber-50; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 text-white py-5 shadow-lg">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 class="text-xl font-bold flex items-center gap-2">
+            <i class="fas fa-hard-hat"></i>
+            Demolition CAPEX Dashboard
+          </h1>
+          <p class="text-amber-100 text-sm mt-0.5">32 Quality Road • Ref: FEPL/QT/2026/FEB/079/RG</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs bg-white/20 px-2.5 py-1 rounded-full flex items-center gap-1">
+            <i class="fas fa-calendar-alt"></i>
+            <span id="last-updated">22 Apr 2026</span>
+          </span>
+          <button onclick="refreshData()" class="bg-white text-amber-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-amber-50 transition flex items-center gap-1.5 shadow-sm">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+          <button onclick="downloadHTML()" class="bg-amber-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-amber-800 transition flex items-center gap-1.5 shadow-sm">
+            <i class="fas fa-download"></i> Download HTML
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- KPI Summary -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div class="card border-l-4 border-amber-500">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Total Budget</p>
+            <p class="text-lg font-bold text-amber-600" id="kpi-total">S$805.8K</p>
+          </div>
+          <div class="bg-amber-50 p-2.5 rounded-full"><i class="fas fa-coins text-amber-600"></i></div>
+        </div>
+      </div>
+      <div class="card border-l-4 border-gray-400">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Committed</p>
+            <p class="text-lg font-bold" id="kpi-committed">S$0.00K</p>
+          </div>
+          <div class="bg-gray-50 p-2.5 rounded-full"><i class="fas fa-file-invoice text-gray-500"></i></div>
+        </div>
+      </div>
+      <div class="card border-l-4 border-emerald-500">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Available</p>
+            <p class="text-lg font-bold text-emerald-600" id="kpi-available">S$805.8K</p>
+          </div>
+          <div class="bg-emerald-50 p-2.5 rounded-full"><i class="fas fa-piggy-bank text-emerald-600"></i></div>
+        </div>
+      </div>
+      <div class="card border-l-4 border-red-500">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Critical Items</p>
+            <p class="text-lg font-bold text-red-600" id="kpi-critical">3</p>
+          </div>
+          <div class="bg-red-50 p-2.5 rounded-full"><i class="fas fa-exclamation-triangle text-red-600"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Category Cost Cards -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+    <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2 text-sm">
+      <i class="fas fa-layer-group text-amber-500"></i>
+      Budget by Category
+    </h3>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3" id="category-cards">
+      <!-- Cards injected by JS -->
+    </div>
+  </div>
+
+  <!-- Charts Row -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div class="card">
+        <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2 text-sm">
+          <i class="fas fa-chart-pie text-amber-500"></i>
+          Budget Distribution
+        </h3>
+        <div class="chart-container"><canvas id="categoryChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2 text-sm">
+          <i class="fas fa-calendar-week text-orange-500"></i>
+          Timeline Overview
+        </h3>
+        <div class="chart-container"><canvas id="timelineChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Excel Upload Section -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+    <div class="card bg-gradient-to-r from-amber-50 to-orange-50 border-amber-200">
+      <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div class="flex-1">
+          <h3 class="font-semibold text-gray-800 flex items-center gap-2 text-sm">
+            <i class="fas fa-file-excel text-green-600"></i>
+            Update Dashboard Data
+          </h3>
+          <p class="text-xs text-gray-600 mt-1">Upload revised Excel file • Dashboard refreshes instantly</p>
+        </div>
+        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+          <i class="fas fa-cloud-upload-alt text-2xl text-gray-400 mb-2"></i>
+          <p class="text-sm text-gray-600">Drop .xlsx file or <span class="text-amber-600 font-medium">browse</span></p>
+          <p class="text-xs text-gray-400 mt-1">First sheet only • Same column headers</p>
+          <input type="file" id="file-input" accept=".xlsx,.xls" class="hidden" onchange="handleFileUpload(event)">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls & Table -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+    <div class="card">
+      <!-- Toolbar -->
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4 pb-4 border-b">
+        <div class="flex flex-wrap items-center gap-3">
+          <h3 class="font-semibold text-gray-800 flex items-center gap-2 text-sm">
+            <i class="fas fa-table text-gray-500"></i>
+            Work Package Details
+          </h3>
+          <span class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded" id="row-count">17 items</span>
+        </div>
+        
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Search -->
+          <div class="relative">
+            <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+            <input type="text" id="search-input" placeholder="Search..." 
+                   class="pl-7 pr-2.5 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-amber-500 focus:border-amber-500 w-40"
+                   onkeyup="filterTable()">
+          </div>
+          
+          <!-- Category Filter -->
+          <select id="category-filter" class="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-amber-500" onchange="filterTable()">
+            <option value="">All Categories</option>
+            <option value="Preliminaries">Preliminaries</option>
+            <option value="Demolition Works">Demolition Works</option>
+            <option value="Survey Works">Survey Works</option>
+            <option value="Soil Investigation">Soil Investigation</option>
+            <option value="Forward Works">Forward Works</option>
+          </select>
+          
+          <!-- Column Selector -->
+          <div class="relative" id="column-selector">
+            <button class="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 flex items-center gap-1.5 transition" onclick="toggleColumnMenu(event)">
+              <i class="fas fa-columns"></i> Columns
+              <i class="fas fa-chevron-down text-[10px]"></i>
+            </button>
+            <div id="column-menu" class="hidden absolute right-0 mt-1.5 w-64 bg-white rounded-xl shadow-lg border border-gray-200 p-3 z-50 max-h-72 overflow-y-auto text-xs">
+              <p class="text-[10px] text-gray-500 mb-2 font-medium uppercase tracking-wide">Select columns:</p>
+              <div id="column-options" class="space-y-1"></div>
+              <div class="mt-3 pt-2 border-t flex gap-2">
+                <button onclick="selectAllColumns()" class="text-[10px] text-amber-600 hover:underline font-medium">Select All</button>
+                <button onclick="deselectAllColumns()" class="text-[10px] text-gray-500 hover:underline">Deselect All</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Table -->
+      <div class="table-container">
+        <div class="table-wrapper">
+          <table id="capex-table">
+            <thead>
+              <tr id="table-header">
+                <!-- Headers injected by JS -->
+              </tr>
+            </thead>
+            <tbody id="table-body">
+              <!-- Rows injected by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      <div class="mt-4 text-xs text-gray-500 flex items-center justify-between">
+        <span><i class="fas fa-info-circle mr-1"></i> All amounts in SGD • Contract Period: 4 months</span>
+        <button onclick="exportCSV()" class="text-amber-600 hover:underline flex items-center gap-1">
+          <i class="fas fa-file-csv"></i> Export CSV
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Exclusions Banner -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
+    <div class="card bg-red-50 border-red-200">
+      <h4 class="font-semibold text-red-800 text-sm flex items-center gap-2 mb-2">
+        <i class="fas fa-exclamation-circle"></i>
+        Key Exclusions (Not in Base Offer)
+      </h4>
+      <ul class="text-xs text-red-700 space-y-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+        <li>• Service diversion/decommissioning of power</li>
+        <li>• M&E termination/diversion applications</li>
+        <li>• JTC Clearance & URA WP</li>
+        <li>• Asbestos survey/removal</li>
+        <li>• Environmental Site Assessment (ESA)</li>
+        <li>• Illegal dumping removal below ground</li>
+        <li>• Soil treatment/decontamination</li>
+        <li>• Retaining wall demolition</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-gray-50 border-t border-gray-200 py-5 mt-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-gray-500">
+      <p>Demolition CAPEX Dashboard • Fidecs Engineering • 32 Quality Road</p>
+      <p class="mt-1">
+        <i class="fas fa-code mr-1"></i> 
+        Hosted on GitHub • 
+        <a href="#" class="text-amber-600 hover:underline" onclick="toggleMondayEmbed()">
+          <i class="fas fa-external-link-alt mr-1"></i>View in monday.com
+        </a>
+      </p>
+      <div id="monday-embed-note" class="monday-embed mt-2 p-2.5 bg-amber-50 rounded-lg text-amber-700 text-[10px] inline-block">
+        <i class="fas fa-plug mr-1"></i>
+        This dashboard syncs with your monday.com Demolition CAPEX board.
+      </div>
+    </div>
+  </footer>
+
+  <!-- monday.com Embed Modal -->
+  <div id="monday-embed" class="monday-embed fixed inset-0 bg-white/95 z-50 p-4 overflow-auto flex items-center justify-center">
+    <div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-bold text-gray-800 flex items-center gap-2">
+          <i class="fab fa-monday text-amber-600"></i>
+          monday.com Integration
+        </h2>
+        <button onclick="toggleMondayEmbed()" class="text-gray-400 hover:text-gray-600">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="space-y-3">
+        <div class="p-3 bg-gray-50 rounded-lg border text-xs">
+          <p class="text-gray-600 mb-1"><strong>Board:</strong> <code class="bg-white px-1.5 py-0.5 rounded border text-[10px]">Demolition CAPEX – 32 Quality Road</code></p>
+          <p class="text-gray-600">Data syncs automatically when budget/actual values are updated in monday.com.</p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="toggleMondayEmbed()" class="flex-1 bg-amber-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-amber-700 transition">
+            Close & View Dashboard
+          </button>
+          <a href="https://monday.com" target="_blank" class="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition text-center">
+            Open monday.com
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script>
+    // === CONFIG ===
+    const COLUMNS = [
+      { key: 'id', label: 'ID', visible: true, sortable: true, width: 'w-16' },
+      { key: 'wp', label: 'Work Package', visible: true, sortable: true, width: 'w-32' },
+      { key: 'cat', label: 'Category', visible: true, sortable: true, width: 'w-28' },
+      { key: 'sub', label: 'Sub-Category', visible: false, sortable: true, width: 'w-32' },
+      { key: 'desc', label: 'Description', visible: true, sortable: false, width: 'w-64' },
+      { key: 'unit', label: 'Unit', visible: false, sortable: true, width: 'w-16' },
+      { key: 'qty', label: 'Qty', visible: false, sortable: true, width: 'w-12' },
+      { key: 'rate', label: 'Rate (SGD)', visible: false, sortable: true, type: 'currency', width: 'w-20' },
+      { key: 'budget', label: 'Budget (SGD)', visible: true, sortable: true, type: 'currency', width: 'w-24' },
+      { key: 'actual', label: 'Actual', visible: true, sortable: true, type: 'currency', width: 'w-24' },
+      { key: 'variance', label: 'Variance', visible: true, sortable: true, type: 'currency', width: 'w-24' },
+      { key: 'spent', label: '% Spent', visible: true, sortable: true, type: 'percent', width: 'w-16' },
+      { key: 'status', label: 'Status', visible: true, sortable: true, type: 'badge', width: 'w-24' },
+      { key: 'priority', label: 'Priority', visible: true, sortable: true, type: 'badge', width: 'w-20' },
+      { key: 'owner', label: 'Owner', visible: false, sortable: true, width: 'w-32' },
+      { key: 'start', label: 'Start Date', visible: false, sortable: true, type: 'date', width: 'w-24' },
+      { key: 'end', label: 'End Date', visible: false, sortable: true, type: 'date', width: 'w-24' },
+      { key: 'phase', label: 'Phase', visible: true, sortable: true, type: 'phase', width: 'w-20' },
+      { key: 'terms', label: 'Payment Terms', visible: false, sortable: true, width: 'w-32' },
+      { key: 'notes', label: 'Notes', visible: false, sortable: false, width: 'w-48' }
+    ];
+
+    // === DATA (from Demolition Proposal FEPL/QT/2026/FEB/079/RG) ===
+    let capexData = [
+      { id: "DEM-001", wp: "Preliminaries", cat: "Preliminaries", sub: "Site Setup", desc: "Site management, safety provision, equipment, temporary facilities", unit: "sum", qty: 1, rate: 61400, budget: 61400, actual: 0, variance: 61400, spent: 0, status: "Not Started", priority: "High", owner: "Project Manager", start: "2026-06-01", end: "2026-09-30", phase: 0, terms: "30% deposit + progress", notes: "Includes MOM/NEA compliance" },
+      { id: "DEM-002", wp: "Preliminaries", cat: "Preliminaries", sub: "Temporary Works", desc: "Temporary hoarding and washing bay", unit: "sum", qty: 1, rate: 24700, budget: 24700, actual: 0, variance: 24700, spent: 0, status: "Not Started", priority: "Medium", owner: "Site Supervisor", start: "2026-06-01", end: "2026-09-30", phase: 0, terms: "Progress claims", notes: "BCA compliant hoarding" },
+      { id: "DEM-003", wp: "Preliminaries", cat: "Preliminaries", sub: "Environmental", desc: "Earth Control Measures (ECM) for sediment control", unit: "sum", qty: 1, rate: 20000, budget: 20000, actual: 0, variance: 20000, spent: 0, status: "Not Started", priority: "High", owner: "Environmental Officer", start: "2026-06-01", end: "2026-09-30", phase: 0, terms: "Progress claims", notes: "PUB/NEA requirements" },
+      { id: "DEM-004", wp: "Preliminaries", cat: "Preliminaries", sub: "Insurance", desc: "Contractors' All Risks (CAR) & Public Liability Insurance", unit: "sum", qty: 1, rate: 11200, budget: 11200, actual: 0, variance: 11200, spent: 0, status: "Not Started", priority: "High", owner: "Admin", start: "2026-06-01", end: "2026-09-30", phase: 0, terms: "Upfront", notes: "Minimum S$10M coverage" },
+      { id: "DEM-005", wp: "Demolition Works", cat: "Demolition Works", sub: "Main Demolition", desc: "Total structure demolition to soffit of pile cap; removal of all demolished material", unit: "sum", qty: 1, rate: 626600, budget: 626600, actual: 0, variance: 626600, spent: 0, status: "Not Started", priority: "Critical", owner: "Demolition Subcon", start: "2026-07-01", end: "2026-10-31", phase: 0, terms: "Progress claims", notes: "Includes debris removal & site clearing" },
+      { id: "DEM-006", wp: "Demolition Works", cat: "Demolition Works", sub: "Supervision", desc: "Provision of Resident Technical Officer (RTO)", unit: "mth", qty: 4, rate: 6500, budget: 26000, actual: 0, variance: 26000, spent: 0, status: "Not Started", priority: "High", owner: "RTO Consultant", start: "2026-07-01", end: "2026-10-31", phase: 0, terms: "Monthly billing", notes: "BCA requirement" },
+      { id: "DEM-007", wp: "Survey Works", cat: "Survey Works", sub: "Control Survey", desc: "Horizontal control in SVY21 system; Vertical control in Singapore Height Datum", unit: "sum", qty: 1, rate: 10100, budget: 10100, actual: 0, variance: 10100, spent: 0, status: "Not Started", priority: "Medium", owner: "Surveyor", start: "2026-06-15", end: "2026-07-15", phase: 0, terms: "Progress claims", notes: "TBM establishment & pre-computation plan" },
+      { id: "DEM-008", wp: "Survey Works", cat: "Survey Works", sub: "Boundary Marking", desc: "Mark site boundary points for hoarding works", unit: "sum", qty: 1, rate: 3300, budget: 3300, actual: 0, variance: 3300, spent: 0, status: "Not Started", priority: "Low", owner: "Surveyor", start: "2026-06-15", end: "2026-06-30", phase: 0, terms: "Progress claims", notes: "Coordinate verification" },
+      { id: "DEM-009", wp: "Survey Works", cat: "Survey Works", sub: "Cable Detection", desc: "Cable detection work for underground services", unit: "borehole", qty: 6, rate: 47, budget: 282, actual: 0, variance: 282, spent: 0, status: "Not Started", priority: "High", owner: "Utility Consultant", start: "2026-06-20", end: "2026-07-10", phase: 0, terms: "Progress claims", notes: "SP PowerGrid/Telecom coordination" },
+      { id: "DEM-010", wp: "Soil Investigation", cat: "Soil Investigation", sub: "SPT Sampling", desc: "SPT sampling at 3m interval to max 30m depth or 3 successive N≥100", unit: "no", qty: 1, rate: 117, budget: 117, actual: 0, variance: 117, spent: 0, status: "Not Started", priority: "Medium", owner: "Geotech Subcon", start: "2026-10-28", end: "2026-11-15", phase: 0, terms: "Progress claims", notes: "Post-demolition SI" },
+      { id: "DEM-011", wp: "Soil Investigation", cat: "Soil Investigation", sub: "Thin Wall Sampling", desc: "Thin wall sampling for soft soil layers", unit: "no", qty: 1, rate: 293, budget: 293, actual: 0, variance: 293, spent: 0, status: "Not Started", priority: "Medium", owner: "Geotech Subcon", start: "2026-10-28", end: "2026-11-15", phase: 0, terms: "Progress claims", notes: "Undisturbed samples" },
+      { id: "DEM-012", wp: "Soil Investigation", cat: "Soil Investigation", sub: "Mazier Sampling", desc: "Mazier sampling for sensitive soil layers (>2 nos)", unit: "Loc", qty: 1, rate: 210, budget: 210, actual: 0, variance: 210, spent: 0, status: "Not Started", priority: "Low", owner: "Geotech Subcon", start: "2026-10-28", end: "2026-11-15", phase: 0, terms: "Progress claims", notes: "High-quality undisturbed samples" },
+      { id: "DEM-013", wp: "Soil Investigation", cat: "Soil Investigation", sub: "Hacking Works", desc: "Hacking works on concrete/premix for borehole access", unit: "m", qty: 1, rate: 3000, budget: 6000, actual: 0, variance: 6000, spent: 0, status: "Not Started", priority: "Medium", owner: "Civil Subcon", start: "2026-10-28", end: "2026-11-05", phase: 0, terms: "Progress claims", notes: "2 locations estimated" },
+      { id: "DEM-014", wp: "Soil Investigation", cat: "Soil Investigation", sub: "Extra Drilling", desc: "Extra over drilling in soil >30m including SPT sampling", unit: "borehole", qty: 2, rate: 3000, budget: 6000, actual: 0, variance: 6000, spent: 0, status: "Not Started", priority: "Low", owner: "Geotech Subcon", start: null, end: null, phase: 0, terms: "Provisional", notes: "Contingency item" },
+      { id: "DEM-015", wp: "Soil Investigation", cat: "Soil Investigation", sub: "Final Report", desc: "Submission of final SI report with PE endorsement, AGS format, 2 hardcopies", unit: "sum", qty: 1, rate: 0, budget: 0, actual: 0, variance: 0, spent: 0, status: "Not Started", priority: "Medium", owner: "Geotech Consultant", start: "2026-11-15", end: "2026-12-12", phase: 0, terms: "Milestone-based", notes: "Includes lab test results" },
+      { id: "DEM-016", wp: "Forward Works", cat: "Forward Works", sub: "Backfilling", desc: "Backfilling & levelling of demolished site with hardcore layer", unit: "sum", qty: 1, rate: 0, budget: 0, actual: 0, variance: 0, spent: 0, status: "Not Started", priority: "Medium", owner: "Civil Subcon", start: "2026-10-31", end: "2026-11-15", phase: 0, terms: "Progress claims", notes: "Included in demolition scope" },
+      { id: "DEM-017", wp: "Forward Works", cat: "Forward Works", sub: "Trial Hole", desc: "Trial hole excavation & report submission to SLA", unit: "sum", qty: 1, rate: 0, budget: 0, actual: 0, variance: 0, spent: 0, status: "Not Started", priority: "Medium", owner: "Civil Subcon", start: "2026-10-20", end: "2026-11-05", phase: 0, terms: "Progress claims", notes: "SLA requirement" }
+    ];
+
+    // === HELPERS ===
+    const fmtCurrency = n => {
+      if (n === 0) return 'S$0';
+      if (n >= 1e6) return `S$${(n/1e6).toFixed(2)}M`;
+      if (n >= 1e3) return `S$${(n/1e3).toFixed(1)}K`;
+      return `S$${n.toLocaleString()}`;
+    };
+    
+    const fmtDate = d => {
+      if (!d || d === 'TBD') return 'TBD';
+      if (typeof d === 'number' && d > 10000) {
+        const date = new Date(Math.round((d - 25569) * 86400 * 1000));
+        return date.toLocaleDateString('en-SG', {year:'numeric',month:'short',day:'numeric'});
+      }
+      const date = new Date(d);
+      return date.toLocaleDateString('en-SG', {year:'numeric',month:'short',day:'numeric'});
+    };
+    
+    const getPhaseLabel = p => ({0:'Phase 0: Demolition'}[p]||`Phase ${p}`);
+    const getPhaseClass = p => ({0:'phase-0'}[p]||'phase-0');
+    const getPhaseIcon = p => ({0:'🔨'}[p]||'📋');
+    
+    const getStatusBadge = s => {
+      const map = {
+        "Not Started": "badge-not-started",
+        "In Progress": "badge-in-progress", 
+        "Completed": "badge-completed"
+      };
+      return `<span class="badge ${map[s]||'badge-not-started'}">${s}</span>`;
+    };
+    
+    const getPriorityBadge = p => {
+      const map = {
+        "Critical": "badge-critical",
+        "High": "badge-high",
+        "Medium": "badge-medium",
+        "Low": "badge-low"
+      };
+      return `<span class="badge ${map[p]||'badge-medium'}">${p}</span>`;
+    };
+    
+    const getCategoryColor = c => {
+      const map = {
+        'Preliminaries':'prelim','Demolition Works':'demolition','Survey Works':'survey',
+        'Soil Investigation':'geotech','Forward Works':'forward','Provisional Sum':'provisional'
+      };
+      return map[c]||'provisional';
+    };
+
+    // === RENDER CATEGORY CARDS ===
+    function renderCategoryCards() {
+      const cats = {};
+      capexData.forEach(d => { 
+        const cat = d.cat;
+        cats[cat] = (cats[cat]||0) + d.budget; 
+      });
+      const total = Object.values(cats).reduce((a,b)=>a+b,0) || 1;
+      const container = document.getElementById('category-cards');
+      
+      container.innerHTML = Object.entries(cats).map(([cat, amt]) => {
+        const pct = Math.min(100, ((amt/total)*100).toFixed(1));
+        const color = getCategoryColor(cat);
+        const count = capexData.filter(d=>d.cat===cat).length;
+        return `
+          <div class="category-card category-${color} animate-fade-in">
+            <div class="relative z-10">
+              <p class="text-[10px] opacity-90 uppercase tracking-wide">${cat}</p>
+              <p class="text-base font-bold mt-0.5">${fmtCurrency(amt)}</p>
+              <div class="mt-2">
+                <div class="flex justify-between text-[10px] mb-1 opacity-90">
+                  <span>${pct}%</span>
+                  <span>${count} items</span>
+                </div>
+                <div class="progress-bar bg-white/30">
+                  <div class="progress-fill" style="width:${pct}%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // === RENDER TABLE ===
+    function renderTable(data) {
+      const visibleCols = COLUMNS.filter(c => c.visible);
+      
+      const header = document.getElementById('table-header');
+      header.innerHTML = visibleCols.map(col => 
+        `<th ${col.sortable?'onclick="sortTable(\''+col.key+'\')"':''} class="${col.width||''}">${col.label}${col.sortable?' <i class="fas fa-sort text-gray-400 text-[10px]"></i>':''}</th>`
+      ).join('');
+      
+      const body = document.getElementById('table-body');
+      body.innerHTML = data.map(row => `
+        <tr class="animate-fade-in">
+          ${visibleCols.map(col => {
+            let val = row[col.key];
+            if (col.type === 'currency') return `<td class="currency ${val<0?'text-red-600':'text-emerald-600'}">${fmtCurrency(val)}</td>`;
+            if (col.type === 'percent') return `<td>${val}%</td>`;
+            if (col.type === 'date') return `<td class="text-[10px] text-gray-500">${fmtDate(val)}</td>`;
+            if (col.type === 'badge' && col.key==='status') return `<td>${getStatusBadge(val)}</td>`;
+            if (col.type === 'badge' && col.key==='priority') return `<td>${getPriorityBadge(val)}</td>`;
+            if (col.type === 'phase') return `<td><span class="phase-badge ${getPhaseClass(val)}">${getPhaseIcon(val)} ${getPhaseLabel(val)}</span></td>`;
+            if (col.key === 'desc') return `<td class="max-w-xs truncate" title="${val||''}">${val||'—'}</td>`;
+            return `<td class="text-[11px]">${val||'—'}</td>`;
+          }).join('')}
+        </tr>
+      `).join('');
+      
+      document.getElementById('row-count').textContent = `${data.length} items`;
+    }
+
+    // === FILTER & SEARCH ===
+    function filterTable() {
+      const search = document.getElementById('search-input').value.toLowerCase();
+      const cat = document.getElementById('category-filter').value;
+      const filtered = capexData.filter(r => 
+        (Object.values(r).join(' ').toLowerCase().includes(search)) &&
+        (!cat || r.cat === cat)
+      );
+      renderTable(filtered);
+    }
+
+    // === SORT ===
+    let sortCol = null, sortAsc = true;
+    function sortTable(key) {
+      if (sortCol === key) sortAsc = !sortAsc;
+      else { sortCol = key; sortAsc = true; }
+      capexData.sort((a,b) => {
+        let [x,y] = [a[key], b[key]];
+        if (typeof x === 'string') [x,y] = [x.toLowerCase(), y.toLowerCase()];
+        return sortAsc ? (x>y?1:x<y?-1:0) : (x<y?1:x>y?-1:0);
+      });
+      filterTable();
+    }
+
+    // === COLUMN SELECTOR ===
+    function initColumnSelector() {
+      const container = document.getElementById('column-options');
+      container.innerHTML = COLUMNS.map(col => `
+        <label class="column-toggle">
+          <input type="checkbox" ${col.visible?'checked':''} onchange="toggleColumn('${col.key}', this.checked)">
+          <span>${col.label}</span>
+        </label>
+      `).join('');
+    }
+    
+    function toggleColumn(key, visible) {
+      const col = COLUMNS.find(c => c.key === key);
+      if (col) { col.visible = visible; filterTable(); }
+    }
+    
+    function toggleColumnMenu(e) {
+      e.stopPropagation();
+      const menu = document.getElementById('column-menu');
+      menu.classList.toggle('hidden');
+    }
+    
+    function selectAllColumns() { 
+      COLUMNS.forEach(c=>{c.visible=true;const cb=document.querySelector(`input[onchange*="${c.key}"]`);if(cb)cb.checked=true}); 
+      filterTable(); 
+    }
+    function deselectAllColumns() { 
+      COLUMNS.forEach(c=>{c.visible=false;const cb=document.querySelector(`input[onchange*="${c.key}"]`);if(cb)cb.checked=false}); 
+      filterTable(); 
+    }
+    
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#column-selector')) document.getElementById('column-menu').classList.add('hidden');
+    });
+
+    // === CHARTS ===
+    let categoryChart, timelineChart;
+    function initCharts() {
+      // Category Chart
+      const cats = {};
+      capexData.forEach(d => { cats[d.cat] = (cats[d.cat]||0) + d.budget; });
+      const ctx1 = document.getElementById('categoryChart');
+      if (categoryChart) categoryChart.destroy();
+      categoryChart = new Chart(ctx1, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(cats),
+          datasets: [{
+            data: Object.values(cats),
+            backgroundColor: ['#3b82f6','#ef4444','#22c55e','#8b5cf6','#06b6d4','#64748b'],
+            borderWidth: 2, borderColor: '#fff'
+          }]
+        },
+        options: { 
+          responsive: true, maintainAspectRatio: false, 
+          plugins: { legend: { position: 'bottom', labels: { size: 9, padding: 12 } } }, 
+          cutout: '65%' 
+        }
+      });
+
+      // Timeline Chart (simplified monthly view)
+      const months = ['Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const monthly = {Jun:0,Jul:0,Aug:0,Sep:0,Oct:0,Nov:0,Dec:0};
+      capexData.forEach(d => {
+        if (d.start) {
+          const m = new Date(d.start).toLocaleString('en-US',{month:'short'});
+          if (monthly[m] !== undefined) monthly[m] += d.budget;
+        }
+      });
+      const ctx2 = document.getElementById('timelineChart');
+      if (timelineChart) timelineChart.destroy();
+      timelineChart = new Chart(ctx2, {
+        type: 'bar',
+        data: {
+          labels: months,
+          datasets: [{
+            label: 'Planned Spend (SGD)',
+            data: months.map(m => monthly[m]||0),
+            backgroundColor: '#f59e0b',
+            borderRadius: 6, borderSkipped: false
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { 
+              beginAtZero: true, 
+              ticks: { 
+                callback: v => v>=1e3?`S$${(v/1e3).toFixed(0)}K`:`S$${v}`,
+                font: { size: 9 }
+              }
+            },
+            x: { ticks: { font: { size: 9 } } }
+          }
+        }
+      });
+    }
+
+    // === KPIs ===
+    function updateKPIs() {
+      const total = capexData.reduce((s,d)=>s+(d.budget||0),0);
+      const committed = capexData.reduce((s,d)=>s+(d.actual||0),0);
+      const critical = capexData.filter(d=>d.priority==='Critical').length;
+      document.getElementById('kpi-total').textContent = fmtCurrency(total);
+      document.getElementById('kpi-committed').textContent = fmtCurrency(committed);
+      document.getElementById('kpi-available').textContent = fmtCurrency(total - committed);
+      document.getElementById('kpi-critical').textContent = critical;
+    }
+
+    // === EXCEL UPLOAD ===
+    const dropZone = document.getElementById('drop-zone');
+    ['dragenter','dragover','dragleave','drop'].forEach(evt => 
+      dropZone.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); })
+    );
+    ['dragenter','dragover'].forEach(evt => 
+      dropZone.addEventListener(evt, () => dropZone.classList.add('dragover'))
+    );
+    ['dragleave','drop'].forEach(evt => 
+      dropZone.addEventListener(evt, () => dropZone.classList.remove('dragover'))
+    );
+    
+    dropZone.addEventListener('drop', e => {
+      const file = e.dataTransfer.files[0];
+      if (file) processExcelFile(file);
+    });
+    
+    function handleFileUpload(e) {
+      const file = e.target.files[0];
+      if (file) processExcelFile(file);
+    }
+    
+    function processExcelFile(file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, {type: 'array'});
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+          
+          const mapped = jsonData.map(row => ({
+            id: row['Item ID']||row['ID']||'',
+            wp: row['Work Package']||'',
+            cat: row['Category']||'',
+            sub: row['Sub-Category']||'',
+            desc: row['Description']||'',
+            unit: row['Unit']||'',
+            qty: parseFloat(row['Qty']||0)||0,
+            rate: parseFloat(row['Rate (SGD)']||row['Rate']||0)||0,
+            budget: parseFloat(row['Budget Amount (SGD)']||row['Amount']||row['Budget']||0)||0,
+            actual: parseFloat(row['Actual Amount (SGD)']||row['Actual']||0)||0,
+            variance: parseFloat(row['Variance (SGD)']||0)||0,
+            spent: parseFloat(row['% Spent']||row['Spent']||0)||0,
+            status: row['Status']||'Not Started',
+            priority: row['Priority']||'Medium',
+            owner: row['Owner']||'',
+            start: row['Start Date']||null,
+            end: row['End Date']||null,
+            phase: 0,
+            terms: row['Payment Terms']||'',
+            notes: row['Notes']||''
+          })).filter(r => r.id);
+          
+          if (mapped.length > 0) {
+            capexData = mapped;
+            renderAll();
+            alert(`✓ Updated with ${mapped.length} items from "${file.name}"`);
+          }
+        } catch(err) {
+          console.error(err);
+          alert('Error reading file. Please ensure it has the correct column headers.');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // === UTILS ===
+    function refreshData() { location.reload(); }
+    
+    function downloadHTML() {
+      const html = document.documentElement.outerHTML.replace(
+        /let capexData = \[[^\]]+\];/,
+        `let capexData = ${JSON.stringify(capexData)};`
+      );
+      const blob = new Blob([html], {type:'text/html'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Demolition_CAPEX_32QR_${new Date().toISOString().slice(0,10)}.html`;
+      a.click();
+    }
+    
+    function exportCSV() {
+      const visibleCols = COLUMNS.filter(c=>c.visible);
+      const headers = visibleCols.map(c=>c.label).join(',');
+      const rows = capexData.map(r => visibleCols.map(c => {
+        let v = r[c.key];
+        if (c.type==='currency') v = fmtCurrency(v).replace(/[,S$]/g,'');
+        if (c.type==='date') v = fmtDate(v);
+        if (c.type==='badge') v = r[c.key];
+        return `"${(v||'').toString().replace(/"/g,'""')}"`;
+      }).join(','));
+      const csv = [headers, ...rows].join('\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'demolition_capex_export.csv';
+      a.click();
+    }
+    
+    function toggleMondayEmbed() {
+      const embed = document.getElementById('monday-embed');
+      embed.style.display = embed.style.display === 'flex' ? 'none' : 'flex';
+      document.getElementById('monday-embed-note').style.display = embed.style.display === 'flex' ? 'block' : 'none';
+    }
+    
+    function renderAll() {
+      renderCategoryCards();
+      renderTable(capexData);
+      initCharts();
+      updateKPIs();
+    }
+
+    // === INIT ===
+    document.addEventListener('DOMContentLoaded', () => {
+      initColumnSelector();
+      renderAll();
+      
+      const now = new Date();
+      document.getElementById('last-updated').textContent = 
+        now.toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'}) + 
+        ', ' + now.toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'});
+    });
+  </script>
+</body>
+</html>
